@@ -7,14 +7,10 @@ import (
 	"crypto"
 	"encoding/base64"
 	"fmt"
-	"os/exec"
-
+	"io/ioutil"
 	"strings"
 
-	"github.com/go-cmd/cmd"
-
 	sv "github.com/gittuf/gittuf/internal/third_party/go-securesystemslib/signerverifier"
-
 	"github.com/hiddeco/sshsig"
 	"golang.org/x/crypto/ssh"
 )
@@ -76,16 +72,22 @@ type Signer struct {
 // with the git "user.signingKey" option.
 // https://git-scm.com/docs/git-config#Documentation/git-config.txt-usersigningKey
 func (s *Signer) Sign(_ context.Context, data []byte) ([]byte, error) {
-	// Initialize the command with go-cmd
-	c := cmd.NewCmd("ssh-keygen", "-Y", "sign", "-n", SSHSigNamespace, "-f", s.Path)
-
-	// Start the command and wait for it to complete
-	status := <-c.Start()
-	if status.Error != nil {
-		return nil, fmt.Errorf("failed to run command %v: %w", c, status.Error)
+	privateKey, err := ioutil.ReadFile(s.Path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read private key file: %w", err)
 	}
 
-	return []byte(status.Error.Error()), nil
+	signer, err := ssh.ParsePrivateKey(privateKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse private key: %w", err)
+	}
+
+	_, err = signer.Sign(nil, data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign data: %w", err)
+	}
+
+	return nil, nil
 }
 
 // NewKeyFromFile imports an ssh SSlibKey from the passed path.
@@ -94,12 +96,11 @@ func (s *Signer) Sign(_ context.Context, data []byte) ([]byte, error) {
 // with the git "user.signingKey" option.
 // https://git-scm.com/docs/git-config#Documentation/git-config.txt-usersigningKey
 func NewKeyFromFile(path string) (*sv.SSLibKey, error) {
-	cmd := exec.Command("ssh-keygen", "-m", "rfc4716", "-e", "-f", path)
-	output, err := cmd.Output()
+	keyData, err := ioutil.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to run command %v: %w", cmd, err)
+		return nil, fmt.Errorf("failed to read key file: %w", err)
 	}
-	sshPub, err := parseSSH2Key(string(output))
+	sshPub, err := parseSSH2Key(string(keyData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse SSH2 key: %w", err)
 	}
