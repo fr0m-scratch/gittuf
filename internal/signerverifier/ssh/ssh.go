@@ -78,16 +78,16 @@ func (s *Signer) Sign(_ context.Context, data []byte) ([]byte, error) {
 
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
-		cmd = exec.Command("powershell", "-Command", command)
+		cmd = exec.Command("cmd", "/c", command)
 	} else {
 		cmd = exec.Command("bash", "-c", command)
 	}
 
 	cmd.Stdin = bytes.NewBuffer(data)
 
-	output, err := cmd.Output()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("failed to run command %v: %w", cmd, err)
+		return nil, fmt.Errorf("failed to run command %v: %w, output: %s, path: %s", cmd, err, output, s.Path)
 	}
 
 	return output, nil
