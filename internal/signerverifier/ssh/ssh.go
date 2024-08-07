@@ -7,7 +7,8 @@ import (
 	"crypto"
 	"encoding/base64"
 	"fmt"
-	"io/ioutil"
+	"os"
+	"os/exec"
 	"strings"
 
 	sv "github.com/gittuf/gittuf/internal/third_party/go-securesystemslib/signerverifier"
@@ -72,16 +73,19 @@ type Signer struct {
 // with the git "user.signingKey" option.
 // https://git-scm.com/docs/git-config#Documentation/git-config.txt-usersigningKey
 func (s *Signer) Sign(_ context.Context, data []byte) ([]byte, error) {
-	privateKey, err := ioutil.ReadFile(s.Path)
+	// Read the private key
+	key, err := os.ReadFile(s.Path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read private key file: %w", err)
+		return nil, fmt.Errorf("failed to read key file: %w", err)
 	}
 
-	signer, err := ssh.ParsePrivateKey(privateKey)
+	// Parse the private key
+	signer, err := ssh.ParsePrivateKey(key)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse private key: %w", err)
 	}
 
+	// Sign the data
 	_, err = signer.Sign(nil, data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign data: %w", err)
@@ -96,11 +100,12 @@ func (s *Signer) Sign(_ context.Context, data []byte) ([]byte, error) {
 // with the git "user.signingKey" option.
 // https://git-scm.com/docs/git-config#Documentation/git-config.txt-usersigningKey
 func NewKeyFromFile(path string) (*sv.SSLibKey, error) {
-	keyData, err := ioutil.ReadFile(path)
+	cmd := exec.Command("ssh-keygen", "-m", "rfc4716", "-e", "-f", path)
+	output, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("failed to read key file: %w", err)
+		return nil, fmt.Errorf("failed to run command %v: %w", cmd, err)
 	}
-	sshPub, err := parseSSH2Key(string(keyData))
+	sshPub, err := parseSSH2Key(string(output))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse SSH2 key: %w", err)
 	}
