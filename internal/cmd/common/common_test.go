@@ -26,10 +26,10 @@ func TestLoadSigner(t *testing.T) {
 
 	for name, test := range tests {
 		keyPath := filepath.Join(tmpDir, name)
-		if err := os.WriteFile(keyPath, test.keyBytes, 0o600); err != nil {
+		if err := os.WriteFile(keyPath, test.keyBytes, 0o666); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(keyPath+".pub", test.publicKeyBytes, 0o600); err != nil {
+		if err := os.WriteFile(keyPath+".pub", test.publicKeyBytes, 0o666); err != nil {
 			t.Fatal(err)
 		}
 

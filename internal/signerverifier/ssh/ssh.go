@@ -8,9 +8,13 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os/exec"
+
 	"strings"
 
+	"github.com/go-cmd/cmd"
+
 	sv "github.com/gittuf/gittuf/internal/third_party/go-securesystemslib/signerverifier"
+
 	"github.com/hiddeco/sshsig"
 	"golang.org/x/crypto/ssh"
 )
@@ -72,24 +76,16 @@ type Signer struct {
 // with the git "user.signingKey" option.
 // https://git-scm.com/docs/git-config#Documentation/git-config.txt-usersigningKey
 func (s *Signer) Sign(_ context.Context, data []byte) ([]byte, error) {
-	cmd := exec.Command("ssh-keygen", "-Y", "sign", "-n", SSHSigNamespace, "-f", s.Path) //nolint:gosec
-	// command := fmt.Sprintf("ssh-keygen -Y sign -n %s -f %s", SSHSigNamespace, s.Path)
+	// Initialize the command with go-cmd
+	c := cmd.NewCmd("ssh-keygen", "-Y", "sign", "-n", SSHSigNamespace, "-f", s.Path)
 
-	// var cmd *exec.Cmd
-	// if runtime.GOOS == "windows" {
-	// 	cmd = exec.Command("bash", "-c", command)
-	// } else {
-	// 	cmd = exec.Command("bash", "-c", command)
-	// }
-
-	cmd.Stdin = bytes.NewBuffer(data)
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("failed to run command %v: %w, output: %s, path: %s", cmd, err, output, s.Path)
+	// Start the command and wait for it to complete
+	status := <-c.Start()
+	if status.Error != nil {
+		return nil, fmt.Errorf("failed to run command %v: %w", c, status.Error)
 	}
 
-	return output, nil
+	return []byte(status.Error.Error()), nil
 }
 
 // NewKeyFromFile imports an ssh SSlibKey from the passed path.
