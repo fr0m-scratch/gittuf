@@ -78,7 +78,7 @@ func (s *Signer) Sign(_ context.Context, data []byte) ([]byte, error) {
 
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
-		cmd = exec.Command("cmd", "/c", command)
+		cmd = exec.Command("powershell", "-Command", command)
 	} else {
 		cmd = exec.Command("bash", "-c", command)
 	}
