@@ -8,7 +8,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os/exec"
-	"runtime"
 	"strings"
 
 	sv "github.com/gittuf/gittuf/internal/third_party/go-securesystemslib/signerverifier"
@@ -73,15 +72,15 @@ type Signer struct {
 // with the git "user.signingKey" option.
 // https://git-scm.com/docs/git-config#Documentation/git-config.txt-usersigningKey
 func (s *Signer) Sign(_ context.Context, data []byte) ([]byte, error) {
-	// cmd := exec.Command("ssh-keygen", "-Y", "sign", "-n", SSHSigNamespace, "-f", s.Path) //nolint:gosec
-	command := fmt.Sprintf("ssh-keygen -Y sign -n %s -f %s", SSHSigNamespace, s.Path)
+	cmd := exec.Command("ssh-keygen", "-Y", "sign", "-n", SSHSigNamespace, "-f", s.Path) //nolint:gosec
+	// command := fmt.Sprintf("ssh-keygen -Y sign -n %s -f %s", SSHSigNamespace, s.Path)
 
-	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" {
-		cmd = exec.Command("bash", "-c", command)
-	} else {
-		cmd = exec.Command("bash", "-c", command)
-	}
+	// var cmd *exec.Cmd
+	// if runtime.GOOS == "windows" {
+	// 	cmd = exec.Command("bash", "-c", command)
+	// } else {
+	// 	cmd = exec.Command("bash", "-c", command)
+	// }
 
 	cmd.Stdin = bytes.NewBuffer(data)
 
