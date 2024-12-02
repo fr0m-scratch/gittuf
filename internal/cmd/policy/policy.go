@@ -4,6 +4,7 @@
 package policy
 
 import (
+	tui "github.com/gittuf/gittuf/internal/cmd/policy/TUI"
 	"github.com/gittuf/gittuf/internal/cmd/policy/addkey"
 	"github.com/gittuf/gittuf/internal/cmd/policy/addperson"
 	"github.com/gittuf/gittuf/internal/cmd/policy/addrule"
@@ -41,6 +42,7 @@ func New() *cobra.Command {
 	cmd.AddCommand(reorderrules.New(o))
 	cmd.AddCommand(sign.New(o))
 	cmd.AddCommand(updaterule.New(o))
+	cmd.AddCommand(tui.New(o))
 
 	return cmd
 }
