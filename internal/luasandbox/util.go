@@ -11,6 +11,7 @@ package luasandbox
 import (
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	lua "github.com/yuin/gopher-lua"
@@ -141,4 +142,21 @@ func goPatternsToMap(patterns *lua.LTable) []struct{ Key, Value string } {
 		})
 	})
 	return result
+}
+
+type RegexPattern struct {
+	Key   string
+	Regex *regexp.Regexp
+}
+
+// goPatternsToList converts Lua table of patterns to Go struct
+func goPatternsToList(patterns *lua.LTable) []RegexPattern {
+	var patternsList []RegexPattern
+	patterns.ForEach(func(key, value lua.LValue) {
+		patternsList = append(patternsList, RegexPattern{
+			Key:   key.String(),
+			Regex: regexp.MustCompile(value.String()),
+		})
+	})
+	return patternsList
 }
