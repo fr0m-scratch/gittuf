@@ -5,6 +5,7 @@ package hooks
 
 import (
 	"errors"
+
 	"github.com/gittuf/gittuf/internal/tuf"
 )
 
