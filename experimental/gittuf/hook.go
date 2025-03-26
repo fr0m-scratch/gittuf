@@ -12,8 +12,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/gittuf/gittuf/internal/gitinterface"
-	"github.com/gittuf/gittuf/internal/luasandbox"
 	"github.com/gittuf/gittuf/internal/policy"
 	"github.com/gittuf/gittuf/internal/signerverifier/dsse"
 	sslibdsse "github.com/gittuf/gittuf/internal/third_party/go-securesystemslib/dsse"
@@ -166,34 +164,4 @@ func doesFileExist(path string) (bool, error) {
 	}
 
 	return true, nil
-}
-
-func (r *Repository) executeHook(ctx context.Context, hook tuf.Hook, parameters ...string) (int, error) {
-	var hookContents string
-	hookHashes := hook.GetHashes()
-
-	environment, err := luasandbox.NewLuaEnvironment(ctx, r.r)
-	if err != nil {
-		return -1, err
-	}
-	defer environment.Cleanup()
-
-	// Load the hook contents from the repository
-	hookHash, err := gitinterface.NewHash(hookHashes[gitinterface.GitBlobHashName])
-	if err != nil {
-		return -1, err
-	}
-	hookFileContents, err := r.r.ReadBlob(hookHash)
-	if err != nil {
-		return -1, err
-	}
-
-	hookContents = string(hookFileContents)
-
-	exitCode, err := environment.RunScript(hookContents, parameters...)
-	if err != nil {
-		return -1, err
-	}
-
-	return exitCode, nil
 }
