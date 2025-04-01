@@ -11,11 +11,16 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 
+	hookopts "github.com/gittuf/gittuf/experimental/gittuf/options/hooks"
+	"github.com/gittuf/gittuf/internal/gitinterface"
+	"github.com/gittuf/gittuf/internal/luasandbox"
 	"github.com/gittuf/gittuf/internal/policy"
 	"github.com/gittuf/gittuf/internal/signerverifier/dsse"
 	sslibdsse "github.com/gittuf/gittuf/internal/third_party/go-securesystemslib/dsse"
 	"github.com/gittuf/gittuf/internal/tuf"
+	lua "github.com/yuin/gopher-lua"
 )
 
 type ErrHookExists struct {
@@ -32,14 +37,27 @@ var (
 	ErrNoHooksFoundForPrincipal = errors.New("no hooks found for the specified principal")
 )
 
+var (
+	ErrNoHooksFoundForPrincipal = errors.New("no hooks found for the specified principal")
+)
+
 var HookPrePush = HookType("pre-push")
 
-// InvokeHook runs the hooks defined in the specified stage for the user defined
-// by the supplied signer. A check is performed that the user holds the private
-// key necessary for signing, to support the generation of attestations. Upon
-// successful completion of all hooks for the stage for the user, the map of
-// hook names to exit codes is returned.
-func (r *Repository) InvokeHook(ctx context.Context, stage tuf.HookStage, signer sslibdsse.Signer, targetsRoleName string, attest bool, parameters ...string) (map[string]int, error) {
+// InvokeHooksForStage runs the hooks defined in the specified stage for the
+// user defined by principalID. Upon successful completion of all hooks for the
+// stage for the user, the map of hook names to exit codes is returned.
+// TODO: Add attestations workflow
+func (r *Repository) InvokeHooksForStage(ctx context.Context, stage tuf.HookStage, signer sslibdsse.Signer, opts ...hookopts.Option) (map[string]int, error) {
+	options := &hookopts.Options{}
+	for _, fn := range opts {
+		fn(options)
+	}
+
+	// TODO: Use signerverifier API to look at Git config if no signer specified
+	if signer == nil {
+		return nil, sslibdsse.ErrNoSigners
+	}
+
 	keyID, err := signer.KeyID()
 	if err != nil {
 		return nil, err
@@ -52,10 +70,6 @@ func (r *Repository) InvokeHook(ctx context.Context, stage tuf.HookStage, signer
 	}
 
 	rootMetadata, err := state.GetRootMetadata(false)
-	if err != nil {
-		return nil, err
-	}
-	targetsMetadata, err := state.GetTargetsMetadata(targetsRoleName, false)
 	if err != nil {
 		return nil, err
 	}
@@ -79,12 +93,10 @@ func (r *Repository) InvokeHook(ctx context.Context, stage tuf.HookStage, signer
 
 	var selectedHooks []tuf.Hook
 	var selectedPrincipal tuf.Principal
-	var found bool
 
 	// Read the principals from targetsMetadata and attempt to find a match for
 	// the specified principal to determine which hooks to run.
-	for _, principal := range targetsMetadata.GetPrincipals() {
-		// Attempt to match a key for the specified principal
+	for _, principal := range state.GetAllPrincipals() {
 		for _, key := range principal.Keys() {
 			if key.KeyID == keyID {
 				selectedPrincipal = principal
@@ -94,7 +106,7 @@ func (r *Repository) InvokeHook(ctx context.Context, stage tuf.HookStage, signer
 	}
 
 	// Couldn't match the key up to a principal, abort
-	if !found {
+	if selectedPrincipal == nil {
 		return nil, tuf.ErrPrincipalNotFound
 	}
 
@@ -107,9 +119,69 @@ func (r *Repository) InvokeHook(ctx context.Context, stage tuf.HookStage, signer
 		}
 	}
 
+	if len(selectedHooks) == 0 {
+		return nil, ErrNoHooksFoundForPrincipal
+	}
+
+	// Determine what parameters must be supplied based on the hook stage
+	var luaParameters lua.LTable
+
+	// At the moment, the only stage that we support that requires parameters is
+	// the pre-push stage.
+	if stage == tuf.HookStagePrePush {
+		// https://git-scm.com/docs/githooks#_pre_push
+		// For pre-push hooks, we supply two things:
+		// 1. The remote name and destination, e.g.
+		// origin git@github.com:gittuf/gittuf
+		// 2. The local and remote refs/object IDs in the form:
+		// <local ref> <local hash> <remote ref> <remote hash>
+
+		luaParameters.RawSet(lua.LString("remoteName"), lua.LString(options.RemoteName))
+		luaParameters.RawSet(lua.LString("remoteURL"), lua.LString(options.RemoteURL))
+
+		remoteObjects := make(map[string][]gitinterface.Hash, len(options.RefSpecs))
+
+		for _, refSpec := range options.RefSpecs {
+			splitRefSpec := strings.Split(refSpec, ":")
+			localRef, remoteRef := splitRefSpec[0], splitRefSpec[1]
+
+			var remoteHash gitinterface.Hash
+
+			err = r.r.Fetch(options.RemoteName, []string{remoteRef}, true)
+			if err != nil {
+				// This likely means the remote doesn't have the specified ref.
+				// In this case, provide a zero hash as per original Git
+				// behavior.
+				remoteHash = gitinterface.ZeroHash
+			} else {
+				remoteHash, err = r.r.GetReference("FETCH_HEAD")
+				if err != nil {
+					return nil, err
+				}
+			}
+
+			localHash, err := r.r.GetReference(localRef)
+			if err != nil {
+				return nil, err
+			}
+
+			remoteObjects[refSpec] = []gitinterface.Hash{localHash, remoteHash}
+		}
+
+		i := 0
+		for refSpec, hashes := range remoteObjects {
+			splitRefSpec := strings.Split(refSpec, ":")
+			localRef, remoteRef := splitRefSpec[0], splitRefSpec[1]
+
+			combinedString := fmt.Sprintf("%s %s %s %s", localRef, hashes[0], remoteRef, hashes[1])
+			luaParameters.Insert(i, lua.LString(combinedString))
+			i++
+		}
+	}
+
 	exitCodes := make(map[string]int, len(selectedHooks))
 	for _, hook := range selectedHooks {
-		exitCode, err := r.executeHook(ctx, hook, parameters...)
+		exitCode, err := r.executeHook(ctx, hook, luaParameters)
 		if err != nil {
 			return nil, err
 		}
@@ -164,4 +236,30 @@ func doesFileExist(path string) (bool, error) {
 	}
 
 	return true, nil
+}
+
+func (r *Repository) executeHook(ctx context.Context, hook tuf.Hook, parameters lua.LTable) (int, error) {
+	var hookContents string
+	hookBlobID := hook.GetBlobID()
+
+	environment, err := luasandbox.NewLuaEnvironment(ctx, r.r)
+	if err != nil {
+		return -1, err
+	}
+	defer environment.Cleanup()
+
+	// Load the hook contents from the repository
+	hookFileContents, err := r.r.ReadBlob(hookBlobID)
+	if err != nil {
+		return -1, err
+	}
+
+	hookContents = string(hookFileContents)
+
+	exitCode, err := environment.RunScript(hookContents, parameters)
+	if err != nil {
+		return -1, err
+	}
+
+	return exitCode, nil
 }

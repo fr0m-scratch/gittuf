@@ -83,20 +83,24 @@ func NewLuaEnvironment(ctx context.Context, repository *gitinterface.Repository)
 
 // RunScript runs the specified script in the given Lua environment, and returns
 // the result of running the script. Parameters are provided as strings.
-func (l *LuaEnvironment) RunScript(script string, parameters ...string) (int, error) {
-	for _, parameter := range parameters {
-		l.lState.Push(lua.LString(parameter))
-	}
+func (l *LuaEnvironment) RunScript(script string, parameters lua.LTable) (int, error) {
+	l.lState.Push(&parameters)
 
 	err := l.lState.DoString(script)
 	if err != nil {
 		return -1, err
 	}
 
-	exitCode := l.lState.Get(-1)
+	returnValue := l.lState.Get(-1)
 	l.lState.Pop(1)
 
-	return int(exitCode.(lua.LNumber)), err
+	// If a table is returned, then this likely means that the hook didn't
+	// return an exit code. Return a 1 for safety.
+	_, ok := returnValue.(*lua.LNumber)
+	if !ok {
+		return 1, nil
+	}
+	return int(returnValue.(lua.LNumber)), err
 }
 
 func (l *LuaEnvironment) GetAPIs() []API {
