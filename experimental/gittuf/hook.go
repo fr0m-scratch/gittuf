@@ -37,10 +37,6 @@ var (
 	ErrNoHooksFoundForPrincipal = errors.New("no hooks found for the specified principal")
 )
 
-var (
-	ErrNoHooksFoundForPrincipal = errors.New("no hooks found for the specified principal")
-)
-
 var HookPrePush = HookType("pre-push")
 
 // InvokeHooksForStage runs the hooks defined in the specified stage for the

@@ -12,7 +12,6 @@ import (
 	"github.com/gittuf/gittuf/experimental/gittuf"
 	rslopts "github.com/gittuf/gittuf/experimental/gittuf/options/rsl"
 	"github.com/gittuf/gittuf/internal/gittuf-git/args"
-	"github.com/gittuf/gittuf/internal/policy"
 	"github.com/gittuf/gittuf/internal/tuf"
 )
 
@@ -119,10 +118,27 @@ func Commit(ctx context.Context, gitArgs args.Args) error { //nolint:revive
 	// TODO: Do we attempt to verify here every time?
 
 	// TODO: Change this maybe?
-	principalID := os.Getenv("GITTUF_GIT_PRINCIPAL_ID")
+	// principalID := os.Getenv("GITTUF_GIT_PRINCIPAL_ID")
+	// principals, err := repo.ListPrincipals(ctx, policy.PolicyRef, policy.TargetsRoleName)
+
+	// if err != nil {
+	// 	return err
+	// }
+
+	// principal := principals[principalID]
+
+	// keys := principal.Keys()
+
+	// if len(keys) == 0 {
+	// 	return fmt.Errorf("no keys found for principal %s", principalID)
+	// }
+
+	// key := v02.NewKeyFromSSLibKey(keys[0])
+
+	signer, err := gittuf.LoadSigner(repo, "/Users/fr0m_scratch/demo1/keys/developer")
 
 	// Invoke pre-commit hook
-	exitCodes, err := repo.InvokeHook(context.Background(), tuf.HookStagePreCommit, principalID, policy.TargetsRoleName)
+	exitCodes, err := repo.InvokeHooksForStage(context.Background(), tuf.HookStagePreCommit, signer)
 	if err != nil {
 		return err
 	}
